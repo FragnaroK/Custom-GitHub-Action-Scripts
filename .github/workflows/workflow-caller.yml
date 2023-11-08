@@ -13,10 +13,12 @@ jobs:
         run: |
           echo "Running workflow caller script"
       - id: foo
-        uses: fragnarok/notify-action@main
+        uses: fragnarok/notify-action
         with:
            details: "This is a test"
            type: "success"
            branch: "main"
            repoName: "test"
            repoLink: "some link" 
+           IFTTT_EVENT: "testEvent"
+           IFTTT_KEY: "some key etst"
