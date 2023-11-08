@@ -13,8 +13,12 @@ jobs:
         run: |
           echo "Running workflow caller script"
       - id: foo
-        uses: fragnarok/notify-action@v1
+        uses: fragnarok/notify-action@v1-beta
         with:
-          who-to-greet: 'Mona the Octocat'
+           details: "This is a test"
+           type: "success"
+           branch: "main"
+           repoName: "test"
+           repoLink: "some link"
       - run: echo random-number ${{ steps.foo.outputs.random-number }}
         shell: bash
