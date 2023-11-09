@@ -13,7 +13,7 @@ jobs:
         run: |
           echo "Running workflow caller script"
       - id: foo
-        uses: fragnarok/notify-action@v1.0.3-beta
+        uses: fragnarok/notify-action@8634c4e7673be10fc33fb26cb9db06e7d8ae5637
         with:
            details: "This is a test, nice!"
            type: "success"
