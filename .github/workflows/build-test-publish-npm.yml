@@ -93,16 +93,16 @@ jobs:
           cache: "npm"
 
       - name: Clean install of dependencies
-        if: env.test
+        if: env.test == 'true'
         run: npm ci
 
       - name: Run tests
-        if: env.test && always()
+        if: env.test == 'true' && always()
         id: tests
         run: npm test
 
       - name: Notify test results
-        if: env.test && always()
+        if: env.test == 'true' && always()
         uses: fragnarok/notify-action@v2
         with:
           type: ${{ steps.tests.outcome == 'success' && env.on_test_ok || 'error' }}
@@ -132,16 +132,16 @@ jobs:
           cache: "npm"
 
       - name: Clean install of dependencies
-        if: env.test || env.build || env.publish
+        if: env.build == 'true' || env.publish == 'true'
         run: npm ci
 
       - name: Build on test success
-        if: needs.test.outputs.test_outcome == 'success' && env.build && always()
+        if: needs.test.outputs.test_outcome == 'success' && env.build == 'true' && always()
         id: build
         run: npm run build --if-present
 
       - name: Notify build results
-        if: needs.test.outputs.test_outcome == 'success' && env.build && always()
+        if: needs.test.outputs.test_outcome == 'success' && env.build == 'true' && always()
         uses: fragnarok/notify-action@v2
         with:
           type: ${{ steps.build.outcome == 'success' && env.on_build_ok || 'error' }}
@@ -152,14 +152,14 @@ jobs:
           IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
       - name: Publish on test success
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish && always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish == 'true' && always()
         run: npm publish
         id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
 
       - name: Notify publish results
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish &&  always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish == 'true' &&  always()
         uses: fragnarok/notify-action@v2
         with:
           type: ${{ steps.publish.outcome == 'success' && 'success' || 'error' }}
