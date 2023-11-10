@@ -79,7 +79,6 @@ jobs:
         node-version: ["${{ github.event.inputs.NODE_VERSION }}"]
 
     outputs:
-      test_result: ${{ steps.tests.outputs }}
       test_outcome: ${{ steps.tests.outcome }}
 
     steps:
