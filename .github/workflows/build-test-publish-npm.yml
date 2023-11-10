@@ -31,12 +31,6 @@ on:
         description: "NPM key"
         required: true
 
-env:
-  test: ${{ github.event.inputs.test }}
-  build: ${{ github.event.inputs.build }}
-  publish: ${{ github.event.inputs.publish }}
-  on_test_ok: ${{ github.event.inputs.build == 'true' || github.event.inputs.publish == 'true'  && 'pending' || 'success' }}
-  on_build_ok: ${{ github.event.inputs.publish == 'true' && 'pending' || 'success' }}
 
 jobs:
   get-repo-info:
@@ -58,6 +52,13 @@ jobs:
       - name: Extract repo name
         id: extract_repo_name
         run: echo "repo_name=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
+
+      - name: Parameters
+        run: |
+          echo "test=${{ github.event.inputs.test }}"
+          echo "build=${{ github.event.inputs.build }}"
+          echo "publish=${{ github.event.inputs.publish }}"
+          echo "NODE_VERSION=${{ github.event.inputs.NODE_VERSION }}"
 
       - name: Announce workflow start
         if: always()
@@ -104,7 +105,7 @@ jobs:
         if: always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.tests.outcome == 'success' && github.event.inputs.on_test_ok || 'error' }}
+          type: ${{ steps.tests.outcome == 'success' && 'success' || 'error' }}
           repoName: ${{ needs.get-repo-info.outputs.repo_name }}
           branch: "${{ needs.get-repo-info.outputs.branch }}"
           details: ${{ steps.tests.outcome == 'success' && 'All tests done! 😄' || 'Tests failed 😟' }}
@@ -143,7 +144,7 @@ jobs:
         if: needs.test.outputs.test_outcome == 'success' && github.event.inputs.build == 'true' && always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.build.outcome == 'success' && github.event.inputs.on_build_ok || 'error' }}
+          type: ${{ steps.build.outcome == 'success' && 'success' || 'error' }}
           repoName: ${{ needs.get-repo-info.outputs.repo_name }}
           branch: "${{ needs.get-repo-info.outputs.branch }}"
           details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉' || format('{0} - {1}', 'Build failed! ☹️', steps.build.outputs) }}
