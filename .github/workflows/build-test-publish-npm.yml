@@ -50,9 +50,17 @@ jobs:
         id: extract_repo_name
         run: echo "repo_name=${{ github.repository_owner }}/${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
 
-      - name: Echo data
-        run: cat $GITHUB_OUTPUT
+      - name: Echo data using github context
+        run: |
+          echo "branch=${{ github.head_ref || github.ref }}"
+          echo "repo_url=${{ github.server_url }}/${{ github.repository }}"
+          echo "repo_name=${{ github.repository_owner }}/${{ github.event.repository.name }}"
 
+      - name: Echo data using getters
+        run: |
+          echo "branch=${{ steps.extract_branch.outputs.branch }}"
+          echo "repo_url=${{ steps.extract_repo_url.outputs.repo_url }}"
+          echo "repo_name=${{ steps.extract_repo_name.outputs.repo_name }}"
     #   - name: Notify test results
     #     if: always()
     #     uses: fragnarok/notify-action@v2
