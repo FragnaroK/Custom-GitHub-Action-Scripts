@@ -72,6 +72,7 @@ jobs:
 
   test:
     needs: get-repo-info
+    if: github.event.inputs.test == 'true'
     runs-on: ubuntu-latest
 
     strategy:
@@ -93,19 +94,17 @@ jobs:
           cache: "npm"
 
       - name: Clean install of dependencies
-        if: env.test == 'true'
         run: npm ci
 
       - name: Run tests
-        if: env.test == 'true' && always()
         id: tests
         run: npm test
 
       - name: Notify test results
-        if: env.test == 'true' && always()
+        if: always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.tests.outcome == 'success' && env.on_test_ok || 'error' }}
+          type: ${{ steps.tests.outcome == 'success' && github.event.inputs.on_test_ok || 'error' }}
           repoName: ${{ needs.get-repo-info.outputs.repo_name }}
           branch: "${{ needs.get-repo-info.outputs.branch }}"
           details: ${{ steps.tests.outcome == 'success' && 'All tests done! 😄' || 'Tests failed 😟' }}
@@ -114,6 +113,7 @@ jobs:
 
   build-publish:
     needs: [get-repo-info, test]
+    if: github.event.inputs.build == 'true' || github.event.inputs.publish == 'true'
     runs-on: ubuntu-latest
 
     strategy:
@@ -132,19 +132,18 @@ jobs:
           cache: "npm"
 
       - name: Clean install of dependencies
-        if: env.build == 'true' || env.publish == 'true'
         run: npm ci
 
       - name: Build on test success
-        if: needs.test.outputs.test_outcome == 'success' && env.build == 'true' && always()
+        if: needs.test.outputs.test_outcome == 'success' && github.event.inputs.build == 'true'
         id: build
         run: npm run build --if-present
 
       - name: Notify build results
-        if: needs.test.outputs.test_outcome == 'success' && env.build == 'true' && always()
+        if: needs.test.outputs.test_outcome == 'success' && github.event.inputs.build == 'true' && always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.build.outcome == 'success' && env.on_build_ok || 'error' }}
+          type: ${{ steps.build.outcome == 'success' && github.event.inputs.on_build_ok || 'error' }}
           repoName: ${{ needs.get-repo-info.outputs.repo_name }}
           branch: "${{ needs.get-repo-info.outputs.branch }}"
           details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉' || format('{0} - {1}', 'Build failed! ☹️', steps.build.outputs) }}
@@ -152,14 +151,14 @@ jobs:
           IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
       - name: Publish on test success
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish == 'true' && always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && github.event.inputs.publish == 'true'
         run: npm publish
         id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
 
       - name: Notify publish results
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish == 'true' &&  always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && github.event.inputs.publish == 'true' &&  always()
         uses: fragnarok/notify-action@v2
         with:
           type: ${{ steps.publish.outcome == 'success' && 'success' || 'error' }}
