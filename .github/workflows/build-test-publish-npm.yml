@@ -1,8 +1,23 @@
-name: Build on tests success (released)
+name: Node.js CI
 
 on:
   workflow_call:
     inputs:
+      test:
+        type: boolean
+        description: "Test package"
+        required: false
+        default: true
+      build:
+        type: boolean
+        description: "Build package"
+        required: false
+        default: true
+      publish:
+        type: boolean
+        description: "Publish package"
+        required: false
+        default: true
       NODE_VERSION:
         type: string
         description: "Node version to use"
@@ -15,13 +30,57 @@ on:
       NPM_KEY:
         description: "NPM key"
         required: true
+
+env:
+  test: ${{ github.event.inputs.test }}
+  build: ${{ github.event.inputs.build }}
+  publish: ${{ github.event.inputs.publish }}
+  on_test_ok: ${{ github.event.inputs.build == 'true' || github.event.inputs.publish == 'true'  && 'pending' || 'success' }}
+  on_build_ok: ${{ github.event.inputs.publish == 'true' && 'pending' || 'success' }}
+
 jobs:
-  build-and-publish:
+  get-repo-info:
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.extract_branch.outputs.branch }}
+      repo_url: ${{ steps.extract_repo_url.outputs.repo_url }}
+      repo_name: ${{ steps.extract_repo_name.outputs.repo_name }}
+
+    steps:
+      - name: Extract repo branch
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+
+      - name: Extract repo url
+        id: extract_repo_url
+        run: echo "repo_url=${{ github.server_url }}/${{ github.repository }}" >> $GITHUB_OUTPUT
+
+      - name: Extract repo name
+        id: extract_repo_name
+        run: echo "repo_name=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
+
+      - name: Announce workflow start
+        if: always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: "info"
+          repoName: ${{ steps.extract_repo_name.outputs.repo_name}}
+          branch: "${{ steps.extract_branch.outputs.branch }}"
+          details: "Workflow started"
+          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
+
+  test:
+    needs: get-repo-info
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [ "${{ github.event.inputs.NODE_VERSION }}" ]
+        node-version: ["${{ github.event.inputs.NODE_VERSION }}"]
+
+    outputs:
+      test_result: ${{ steps.tests.outputs }}
+      test_outcome: ${{ steps.tests.outcome }}
 
     steps:
       - name: Checkout repository
@@ -35,65 +94,78 @@ jobs:
           cache: "npm"
 
       - name: Clean install of dependencies
+        if: env.test
         run: npm ci
 
       - name: Run tests
+        if: env.test && always()
         id: tests
         run: npm test
 
-      - name: Extract repo branch
-        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-        id: extract_branch
-
-      - name: Extract repo url
-        id: extract_repo_url
-        run: echo "repo_url=${{ github.server_url }}/${{ github.repository }}" >> $GITHUB_OUTPUT
-
-      - name: Extract repo name
-        id: extract_repo_name
-        run: echo "repo_name=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
-
       - name: Notify test results
-        if: always()
+        if: env.test && always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.tests.outcome == 'success' && 'pending' || 'error' }}
-          repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
-          branch: "${{ steps.extract_branch.outputs.branch }}"
-          details: ${{ steps.tests.outcome == 'success' && 'All tests done! Building! 😄' || 'Tests failed during release - Build skipped 😟'  }}
-          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          type: ${{ steps.tests.outcome == 'success' && env.on_test_ok || 'error' }}
+          repoName: ${{ needs.get-repo-info.outputs.repo_name }}
+          branch: "${{ needs.get-repo-info.outputs.branch }}"
+          details: ${{ steps.tests.outcome == 'success' && 'All tests done! 😄' || 'Tests failed 😟' }}
+          repoLink: ${{ needs.get-repo-info.outputs.repo_url }}
           IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
+  build-publish:
+    needs: [get-repo-info, test]
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: ["${{ github.event.inputs.NODE_VERSION }}"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+
+      - name: Clean install of dependencies
+        if: env.test || env.build || env.publish
+        run: npm ci
+
       - name: Build on test success
-        if: steps.tests.outcome == 'success' && always()
+        if: needs.test.outputs.test_outcome == 'success' && env.build && always()
         id: build
         run: npm run build --if-present
 
       - name: Notify build results
-        if: steps.tests.outcome == 'success' && always()
+        if: needs.test.outputs.test_outcome == 'success' && env.build && always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.build.outcome == 'success' && 'pending' || 'error' }}
-          repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
-          branch: "${{ steps.extract_branch.outputs.branch }}"
-          details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉 Publishing!' || format('{0} - {1}', 'Build failed! ☹️ Skipping publish...', steps.build.outputs) }}
-          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          type: ${{ steps.build.outcome == 'success' && env.on_build_ok || 'error' }}
+          repoName: ${{ needs.get-repo-info.outputs.repo_name }}
+          branch: "${{ needs.get-repo-info.outputs.branch }}"
+          details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉' || format('{0} - {1}', 'Build failed! ☹️', steps.build.outputs) }}
+          repoLink: ${{ needs.get-repo-info.outputs.repo_url }}
           IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
       - name: Publish on test success
-        if: steps.tests.outcome == 'success' && steps.build.outcome == 'success' && always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish && always()
         run: npm publish
         id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
 
       - name: Notify publish results
-        if: steps.tests.outcome == 'success' && steps.build.outcome == 'success' && always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && env.publish &&  always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.build.outcome == 'success' && 'success' || 'error' }}
-          repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
-          branch: "${{ steps.extract_branch.outputs.branch }}"
-          details: ${{ steps.build.outcome == 'success' && 'Published! 🎉🎉' || format('{0} - {1}', 'Could not publish package! ☹️', steps.publish.outputs) }}
-          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          type: ${{ steps.publish.outcome == 'success' && 'success' || 'error' }}
+          repoName: ${{ needs.get-repo-info.outputs.repo_name }}
+          branch: "${{ needs.get-repo-info.outputs.branch }}"
+          details: ${{ steps.publish.outcome == 'success' && 'Published! 🎉🎉' || format('{0} - {1}', 'Could not publish package! ☹️', steps.publish.outputs) }}
+          repoLink: ${{ needs.get-repo-info.outputs.repo_url }}
           IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
