@@ -4,20 +4,20 @@ on:
   workflow_call:
     inputs:
       test:
-        type: boolean
+        type: string
         description: "Test package"
         required: false
-        default: true
+        default: 'true'
       build:
-        type: boolean
+        type: string
         description: "Build package"
         required: false
-        default: true
+        default: 'true'
       publish:
-        type: boolean
+        type: string
         description: "Publish package"
         required: false
-        default: true
+        default: 'true'
       NODE_VERSION:
         type: string
         description: "Node version to use"
