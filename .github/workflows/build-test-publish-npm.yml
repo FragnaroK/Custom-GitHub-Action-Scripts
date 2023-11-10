@@ -32,11 +32,8 @@ on:
         required: true
 
 env:
-  test: ${{ inputs.test }}
-  build: ${{ inputs.build }}
-  publish: ${{ inputs.publish }}
-  on_test_ok: ${{ inputs.build == 'true' || inputs.publish == 'true'  && 'pending' || 'success' }}
-  on_build_ok: ${{ inputs.publish == 'true' && 'pending' || 'success' }}
+  on_test_ok: ${{ (inputs.build || inputs.publish)  && 'pending' || 'success' }}
+  on_build_ok: ${{ inputs.publish && 'pending' || 'success' }}
 
 jobs:
   get-repo-info:
@@ -81,7 +78,7 @@ jobs:
 
   test:
     needs: get-repo-info
-    if: inputs.test == 'true'
+    if: inputs.test
     runs-on: ubuntu-latest
 
     strategy:
@@ -122,7 +119,7 @@ jobs:
 
   build-publish:
     needs: [get-repo-info, test]
-    if: inputs.build == 'true' || inputs.publish == 'true'
+    if: inputs.build || inputs.publish
     runs-on: ubuntu-latest
 
     strategy:
@@ -144,12 +141,12 @@ jobs:
         run: npm ci
 
       - name: Build on test success
-        if: needs.test.outputs.test_outcome == 'success' && inputs.build == 'true'
+        if: needs.test.outputs.test_outcome == 'success' && inputs.build
         id: build
         run: npm run build --if-present
 
       - name: Notify build results
-        if: needs.test.outputs.test_outcome == 'success' && inputs.build == 'true' && always()
+        if: needs.test.outputs.test_outcome == 'success' && inputs.build && always()
         uses: fragnarok/notify-action@v2
         with:
           type: ${{ steps.build.outcome == 'success' && env.on_build_ok || 'error' }}
@@ -160,14 +157,14 @@ jobs:
           IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
       - name: Publish on test success
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish == 'true'
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish
         run: npm publish
         id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
 
       - name: Notify publish results
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish == 'true' &&  always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish &&  always()
         uses: fragnarok/notify-action@v2
         with:
           type: ${{ steps.publish.outcome == 'success' && 'success' || 'error' }}
