@@ -8,7 +8,13 @@ on:
         description: "Node version to use"
         required: false
         default: "18.x"
-
+    secrets:
+      IFTTT_KEY:
+        description: "IFTTT key"
+        required: true
+      NPM_KEY:
+        description: "NPM key"
+        required: true
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
