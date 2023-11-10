@@ -15,10 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
-        
-    env:
-       repo-name: ${{ github.repository_owner }}/${{ github.event.repository.name }}
+        node-version: [ "${{ github.event.inputs.NODE_VERSION }}" ]
 
     steps:
       - name: Checkout repository
@@ -31,16 +28,14 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
 
-    #   - name: Clean install of dependencies
-    #     run: npm ci
+      - name: Clean install of dependencies
+        run: npm ci
 
-    #   - name: Run tests
-    #     id: tests
-    #     run: npm test
+      - name: Run tests
+        id: tests
+        run: npm test
 
       - name: Extract repo branch
-        # id: extract_branch
-        # run: echo "branch=${{ github.head_ref || github.ref }}" >> $GITHUB_OUTPUT
         run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
         id: extract_branch
 
@@ -50,60 +45,49 @@ jobs:
 
       - name: Extract repo name
         id: extract_repo_name
-        run: echo "repo_name=${{ github.repository_owner }}/${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
+        run: echo "repo_name=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
 
-      - name: Echo data using github context
-        run: |
-          echo "branch=${{ github.head_ref || github.ref }}"
-          echo "repo_url=${{ github.server_url }}/${{ github.repository }}"
-          echo "repo_name=${{ github.repository_owner }}/${{ github.event.repository.name }}"
+      - name: Notify test results
+        if: always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: ${{ steps.tests.outcome == 'success' && 'pending' || 'error' }}
+          repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
+          branch: "${{ steps.extract_branch.outputs.branch }}"
+          details: ${{ steps.tests.outcome == 'success' && 'All tests done! Building! 😄' || 'Tests failed during release - Build skipped 😟'  }}
+          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
-      - name: Echo data using getters
-        run: |
-          echo "branch=${{ steps.extract_branch.outputs.branch }}"
-          echo "repo_url=${{ steps.extract_repo_url.outputs.repo_url }}"
-          echo "repo_name=${{ steps.extract_repo_name.outputs.repo_name }}"
-    #   - name: Notify test results
-    #     if: always()
-    #     uses: fragnarok/notify-action@v2
-    #     with:
-    #       type: ${{ steps.tests.outcome == 'success' && 'pending' || 'error' }}
-    #       repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
-    #       branch: "${{ steps.extract_branch.outputs.branch }}"
-    #       details: ${{ steps.tests.outcome == 'success' && 'All tests done! Building! 😄' || 'Tests failed during release - Build skipped 😟'  }}
-    #       repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
-    #       IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
+      - name: Build on test success
+        if: steps.tests.outcome == 'success' && always()
+        id: build
+        run: npm run build --if-present
 
-    #   - name: Build on test success
-    #     if: steps.tests.outcome == 'success' && always()
-    #     id: build
-    #     run: npm run build --if-present
+      - name: Notify build results
+        if: steps.tests.outcome == 'success' && always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: ${{ steps.build.outcome == 'success' && 'pending' || 'error' }}
+          repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
+          branch: "${{ steps.extract_branch.outputs.branch }}"
+          details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉 Publishing!' || format('{0} - {1}', 'Build failed! ☹️ Skipping publish...', steps.build.outputs) }}
+          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
-    #   - name: Notify build results
-    #     if: steps.tests.outcome == 'success' && always()
-    #     uses: fragnarok/notify-action@v2
-    #     with:
-    #       type: ${{ steps.build.outcome == 'success' && 'pending' || 'error' }}
-    #       repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
-    #       branch: "${{ steps.extract_branch.outputs.branch }}"
-    #       details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉 Publishing!' || format('{0} - {1}', 'Build failed! ☹️ Skipping publish...', steps.build.outputs) }}
-    #       repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
-    #       IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
+      - name: Publish on test success
+        if: steps.tests.outcome == 'success' && steps.build.outcome == 'success' && always()
+        run: npm publish
+        id: publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
 
-    #   - name: Publish on test success
-    #     if: steps.tests.outcome == 'success' && steps.build.outcome == 'success' && always()
-    #     run: npm publish
-    #     id: publish
-    #     env:
-    #       NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
-
-    #   - name: Notify publish results
-    #     if: steps.tests.outcome == 'success' && steps.build.outcome == 'success' && always()
-    #     uses: fragnarok/notify-action@v2
-    #     with:
-    #       type: ${{ steps.build.outcome == 'success' && 'success' || 'error' }}
-    #       repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
-    #       branch: "${{ steps.extract_branch.outputs.branch }}"
-    #       details: ${{ steps.build.outcome == 'success' && 'Published! 🎉🎉' || format('{0} - {1}', 'Could not publish package! ☹️', steps.publish.outputs) }}
-    #       repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
-    #       IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
+      - name: Notify publish results
+        if: steps.tests.outcome == 'success' && steps.build.outcome == 'success' && always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: ${{ steps.build.outcome == 'success' && 'success' || 'error' }}
+          repoName: ${{ steps.extract_repo_name.outputs.repo_name }}
+          branch: "${{ steps.extract_branch.outputs.branch }}"
+          details: ${{ steps.build.outcome == 'success' && 'Published! 🎉🎉' || format('{0} - {1}', 'Could not publish package! ☹️', steps.publish.outputs) }}
+          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
