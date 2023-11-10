@@ -39,8 +39,10 @@ jobs:
     #     run: npm test
 
       - name: Extract repo branch
+        # id: extract_branch
+        # run: echo "branch=${{ github.head_ref || github.ref }}" >> $GITHUB_OUTPUT
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
         id: extract_branch
-        run: echo "branch=${{ github.head_ref || github.ref }}" >> $GITHUB_OUTPUT
 
       - name: Extract repo url
         id: extract_repo_url
