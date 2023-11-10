@@ -4,20 +4,20 @@ on:
   workflow_call:
     inputs:
       test:
-        type: string
+        type: boolean
         description: "Test package"
         required: false
-        default: 'true'
+        default: true
       build:
-        type: string
+        type: boolean
         description: "Build package"
         required: false
-        default: 'true'
+        default: true
       publish:
-        type: string
+        type: boolean
         description: "Publish package"
         required: false
-        default: 'true'
+        default: true
       NODE_VERSION:
         type: string
         description: "Node version to use"
@@ -31,6 +31,12 @@ on:
         description: "NPM key"
         required: true
 
+env:
+  test: ${{ inputs.test }}
+  build: ${{ inputs.build }}
+  publish: ${{ inputs.publish }}
+  on_test_ok: ${{ inputs.build == 'true' || inputs.publish == 'true'  && 'pending' || 'success' }}
+  on_build_ok: ${{ inputs.publish == 'true' && 'pending' || 'success' }}
 
 jobs:
   get-repo-info:
@@ -55,10 +61,12 @@ jobs:
 
       - name: Parameters
         run: |
-          echo "test=${{ github.event.inputs.test }}"
-          echo "build=${{ github.event.inputs.build }}"
-          echo "publish=${{ github.event.inputs.publish }}"
-          echo "NODE_VERSION=${{ github.event.inputs.NODE_VERSION }}"
+          echo "test=${{ inputs.test }}"
+          echo "build=${{ inputs.build }}"
+          echo "publish=${{ inputs.publish }}"
+          echo "NODE_VERSION=${{ inputs.NODE_VERSION }}"
+          echo "on_test_ok=${{ env.on_test_ok }}"
+          echo "on_build_ok=${{ env.on_build_ok }}"
 
       - name: Announce workflow start
         if: always()
@@ -73,12 +81,12 @@ jobs:
 
   test:
     needs: get-repo-info
-    if: github.event.inputs.test == 'true'
+    if: inputs.test == 'true'
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: ["${{ github.event.inputs.NODE_VERSION }}"]
+        node-version: ["${{ inputs.NODE_VERSION }}"]
 
     outputs:
       test_outcome: ${{ steps.tests.outcome }}
@@ -105,7 +113,7 @@ jobs:
         if: always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.tests.outcome == 'success' && 'success' || 'error' }}
+          type: ${{ steps.tests.outcome == 'success' && env.on_test_ok || 'error' }}
           repoName: ${{ needs.get-repo-info.outputs.repo_name }}
           branch: "${{ needs.get-repo-info.outputs.branch }}"
           details: ${{ steps.tests.outcome == 'success' && 'All tests done! 😄' || 'Tests failed 😟' }}
@@ -114,12 +122,12 @@ jobs:
 
   build-publish:
     needs: [get-repo-info, test]
-    if: github.event.inputs.build == 'true' || github.event.inputs.publish == 'true'
+    if: inputs.build == 'true' || inputs.publish == 'true'
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: ["${{ github.event.inputs.NODE_VERSION }}"]
+        node-version: ["${{ inputs.NODE_VERSION }}"]
 
     steps:
       - name: Checkout repository
@@ -136,15 +144,15 @@ jobs:
         run: npm ci
 
       - name: Build on test success
-        if: needs.test.outputs.test_outcome == 'success' && github.event.inputs.build == 'true'
+        if: needs.test.outputs.test_outcome == 'success' && inputs.build == 'true'
         id: build
         run: npm run build --if-present
 
       - name: Notify build results
-        if: needs.test.outputs.test_outcome == 'success' && github.event.inputs.build == 'true' && always()
+        if: needs.test.outputs.test_outcome == 'success' && inputs.build == 'true' && always()
         uses: fragnarok/notify-action@v2
         with:
-          type: ${{ steps.build.outcome == 'success' && 'success' || 'error' }}
+          type: ${{ steps.build.outcome == 'success' && env.on_build_ok || 'error' }}
           repoName: ${{ needs.get-repo-info.outputs.repo_name }}
           branch: "${{ needs.get-repo-info.outputs.branch }}"
           details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉' || format('{0} - {1}', 'Build failed! ☹️', steps.build.outputs) }}
@@ -152,14 +160,14 @@ jobs:
           IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
 
       - name: Publish on test success
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && github.event.inputs.publish == 'true'
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish == 'true'
         run: npm publish
         id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
 
       - name: Notify publish results
-        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && github.event.inputs.publish == 'true' &&  always()
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish == 'true' &&  always()
         uses: fragnarok/notify-action@v2
         with:
           type: ${{ steps.publish.outcome == 'success' && 'success' || 'error' }}
