@@ -1,0 +1,187 @@
+name: Node.js CI
+
+on:
+  workflow_call:
+    inputs:
+      test:
+        type: boolean
+        description: "Test package"
+        required: false
+        default: true
+      build:
+        type: boolean
+        description: "Build package"
+        required: false
+        default: true
+      publish:
+        type: boolean
+        description: "Publish package"
+        required: false
+        default: true
+      NODE_VERSION:
+        type: string
+        description: "Node version to use"
+        required: false
+        default: "18.x"
+    secrets:
+      IFTTT_KEY:
+        description: "IFTTT key"
+        required: true
+      NPM_KEY:
+        description: "NPM key"
+        required: true
+
+env:
+  on_test_ok: ${{ (inputs.build || inputs.publish)  && 'pending' || 'success' }}
+  on_build_ok: ${{ inputs.publish && 'pending' || 'success' }}
+
+jobs:
+  get-repo-info:
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.extract_branch.outputs.branch }}
+      repo_url: ${{ steps.extract_repo_url.outputs.repo_url }}
+      repo_name: ${{ steps.extract_repo_name.outputs.repo_name }}
+
+    steps:
+      - name: Extract repo branch
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+
+      - name: Extract repo url
+        id: extract_repo_url
+        run: echo "repo_url=${{ github.server_url }}/${{ github.repository }}" >> $GITHUB_OUTPUT
+
+      - name: Extract repo name
+        id: extract_repo_name
+        run: echo "repo_name=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
+
+      - name: Parameters
+        run: |
+          echo "test=${{ inputs.test }}"
+          echo "build=${{ inputs.build }}"
+          echo "publish=${{ inputs.publish }}"
+          echo "NODE_VERSION=${{ inputs.NODE_VERSION }}"
+          echo "on_test_ok=${{ env.on_test_ok }}"
+          echo "on_build_ok=${{ env.on_build_ok }}"
+
+      - name: Announce workflow start
+        if: always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: "info"
+          repoName: ${{ steps.extract_repo_name.outputs.repo_name}}
+          branch: "${{ steps.extract_branch.outputs.branch }}"
+          details: "Workflow started"
+          repoLink: ${{ steps.extract_repo_url.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
+
+  test:
+    needs: get-repo-info
+    if: inputs.test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: ["${{ inputs.NODE_VERSION }}"]
+
+    outputs:
+      test_outcome: ${{ steps.tests.outcome }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+
+      - name: Clean install of dependencies
+        run: pnpm ci
+
+      - name: Run tests
+        id: tests
+        run: pnpm test
+
+      - name: Notify test results
+        if: always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: ${{ steps.tests.outcome == 'success' && env.on_test_ok || 'error' }}
+          repoName: ${{ needs.get-repo-info.outputs.repo_name }}
+          branch: "${{ needs.get-repo-info.outputs.branch }}"
+          details: ${{ steps.tests.outcome == 'success' && 'All tests done! 😄' || 'Tests failed 😟' }}
+          repoLink: ${{ needs.get-repo-info.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
+
+  build-publish:
+    needs: [get-repo-info, test]
+    if: inputs.build || inputs.publish
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: ["${{ inputs.NODE_VERSION }}"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+
+      - name: Clean install of dependencies
+        run: pnpm ci
+
+      - name: Build on test success
+        if: needs.test.outputs.test_outcome == 'success' && inputs.build
+        id: build
+        run: pnpm run build --if-present
+
+      - name: Notify build results
+        if: needs.test.outputs.test_outcome == 'success' && inputs.build && always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: ${{ steps.build.outcome == 'success' && env.on_build_ok || 'error' }}
+          repoName: ${{ needs.get-repo-info.outputs.repo_name }}
+          branch: "${{ needs.get-repo-info.outputs.branch }}"
+          details: ${{ steps.build.outcome == 'success' && 'Built successfully! 🎉' || format('{0} - {1}', 'Build failed! ☹️', steps.build.outputs) }}
+          repoLink: ${{ needs.get-repo-info.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}
+
+      - name: Publish on test success
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish
+        run: pnpm publish
+        id: publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
+
+      - name: Notify publish results
+        if: needs.test.outputs.test_outcome == 'success' && steps.build.outcome == 'success' && inputs.publish &&  always()
+        uses: fragnarok/notify-action@v2
+        with:
+          type: ${{ steps.publish.outcome == 'success' && 'success' || 'error' }}
+          repoName: ${{ needs.get-repo-info.outputs.repo_name }}
+          branch: "${{ needs.get-repo-info.outputs.branch }}"
+          details: ${{ steps.publish.outcome == 'success' && 'Published! 🎉🎉' || format('{0} - {1}', 'Could not publish package! ☹️', steps.publish.outputs) }}
+          repoLink: ${{ needs.get-repo-info.outputs.repo_url }}
+          IFTTT_KEY: ${{ secrets.IFTTT_KEY }}

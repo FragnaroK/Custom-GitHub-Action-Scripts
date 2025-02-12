@@ -1,0 +1,12 @@
+name: Build and publish npm package
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  call-external-wokrflow:
+    uses: fragnarok/Custom-GitHub-Action-Scripts/.github/workflows/build-test-publish-npm.yml@main
+    with:
+      publish: false
+    secrets: inherit
